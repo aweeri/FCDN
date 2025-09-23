@@ -7,10 +7,13 @@ Keep your squadron updated on your fleet carriers' movements at all times. This 
 - Provides the ability to show off your fleet carrier by using a custom image.
 
 ### Installation
-Simply download the `load.py` file and move it into `[YOUR E:D MC PLUGIN DIRECTORY]/FCDN/` [You need to create the FCDN directory yourself.]
+Simply [download](https://github.com/aweeri/FCDN/blob/main/load.py) the `load.py` file and move it into `[YOUR E:D MC PLUGIN DIRECTORY]/FCDN/` [You need to create the FCDN directory yourself.]
 The default plugin directory for E:D Market Connector is `C:\Users\[USER]\AppData\Local\EDMarketConnector\plugins`
 
-### Configuration options
+### Configuration
+Restart your instance of E:D Market Connector, then go into *File -> Settings -> FCDN.*
+
+Fill out the required information and test your webhook. If that works - you're set. 
 <img width="978" height="437" alt="image" src="https://github.com/user-attachments/assets/e5bd6c60-f465-485c-b396-8739730f4566" />
 
 ### What it looks like in reality
