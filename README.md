@@ -1,2 +1,18 @@
-# FCDN
-Fleet Carrier Discord Notifier is an extremely simple ED:MC addon for Elite Dangerous that watches for any jump requests that you make on your fleet carrier and posts them in discord in an aesthetic formfactor, all without 3rd party services or accounts needed.
+### Fleet Carrier Discord Notifier
+Keep your squadron updated on your fleet carriers' movements at all times. This simple plugin helps with coordination efforts and makes flying your fleet carrier *extra* cool.
+
+### Features
+- Instantly keeps everyone on your Discord server informed about your Fleet Carriers' movements.
+- Provides easily readable dynamic timestamps for lockdown and jump times to be extra clear about what's going on.
+- Provides the ability to show off your fleet carrier by using a custom image.
+
+### Installation
+Simply download the `load.py` file and move it into `[YOUR E:D MC PLUGIN DIRECTORY]/FCDN/` [You need to create the FCDN directory yourself.]
+The default plugin directory for E:D Market Connector is `C:\Users\[USER]\AppData\Local\EDMarketConnector\plugins`
+
+### Configuration options
+<img width="978" height="437" alt="image" src="https://github.com/user-attachments/assets/e5bd6c60-f465-485c-b396-8739730f4566" />
+
+### What it looks like in reality
+<img width="551" height="697" alt="image" src="https://github.com/user-attachments/assets/4374eb32-bc83-4932-a54e-f7ee519e8d2c" />
+<img width="553" height="561" alt="image" src="https://github.com/user-attachments/assets/df8181bb-7717-44d9-98c0-0857dd050bf5" />
