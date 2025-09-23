@@ -1,8 +1,9 @@
 ### Fleet Carrier Discord Notifier
 Keep your squadron updated on your fleet carriers' movements at all times. This simple plugin helps with coordination efforts and makes flying your fleet carrier *extra* cool.
 
+You *need* webhook permissions in the channel that you're planning to use.
 ### Features
-- Instantly keeps everyone on your Discord server informed about your Fleet Carriers' movements.
+- Keeps everyone on your Discord server informed about your Fleet Carriers' movements.
 - Provides easily readable dynamic timestamps for lockdown and jump times to be extra clear about what's going on.
 - Provides the ability to show off your fleet carrier by using a custom image.
 
