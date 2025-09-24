@@ -120,7 +120,7 @@ def get_carrier_display_name() -> str:
     carrier_name = config.get_str(CONFIG_CARRIER_NAME) or ""
     
     if carrier_id and carrier_name:
-        return f"{carrier_id} {carrier_name}"
+        return f"{carrier_name} ({carrier_id})"
     elif carrier_id:
         return carrier_id
     elif carrier_name:
