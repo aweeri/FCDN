@@ -128,10 +128,6 @@ def get_carrier_display_name() -> str:
     return "Fleet Carrier"
 
 
-def get_current_body(station: str, system: str) -> str:
-    return station if station and station != "Orbiting" else f"{system} (Orbiting)"
-
-
 def calculate_times(departure_time: str) -> tuple:
     try:
         departure_dt = datetime.fromisoformat(departure_time.replace('Z', '+00:00'))
@@ -147,7 +143,6 @@ def calculate_times(departure_time: str) -> tuple:
 def create_discord_embed(cmdr: str, system: str, station: str, entry: Dict[str, Any], image_url: str = "") -> Dict[str, Any]:
     event_type = entry["event"]
     carrier_name = get_carrier_display_name()
-    current_body = get_current_body(station, system)
     
     embed = {
         "timestamp": entry.get("timestamp", ""),
@@ -168,7 +163,6 @@ def create_discord_embed(cmdr: str, system: str, station: str, entry: Dict[str, 
             "color": 0x3498db,
             "fields": [
                 {"name": "Departing from", "value": f"```{system}```", "inline": False},
-                {"name": "Currently Orbiting", "value": f"```{current_body}```", "inline": False},
                 {"name": "Headed to", "value": f"```{destination_body}```", "inline": False},
                 {"name": "Estimated lockdown time", "value": lockdown_time, "inline": True},
                 {"name": "Estimated jump time", "value": jump_time, "inline": True}
@@ -181,8 +175,7 @@ def create_discord_embed(cmdr: str, system: str, station: str, entry: Dict[str, 
             "description": f"**{carrier_name}** jump has been cancelled.",
             "color": 0xe74c3c,
             "fields": [
-                {"name": "Current Location", "value": f"```{system}```", "inline": False},
-                {"name": "Currently Orbiting", "value": f"```{current_body}```", "inline": False},
+                {"name": "Current Location", "value": f"```{system}```", "inline": False}
             ]
         })
     
