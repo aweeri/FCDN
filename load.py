@@ -501,7 +501,9 @@ def test_webhook() -> None:
     webhook_url = config_state.webhook_entry.get().strip() if config_state.webhook_entry else ""
     image_url = config_state.image_entry.get().strip() if config_state.image_entry else ""
     
-    if not webhook_url.startswith("https://discord.com/api/webhooks/"):
+    if not webhook_url.startswith(
+        ("https://discord.com/api/webhooks/", "https://discordapp.com/api/webhooks/")
+    ):
         logger.warning("Invalid webhook URL format")
         return
     
