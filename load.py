@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Optional, Dict, Any
 from datetime import datetime, timedelta
 import requests
+import math
 
 # EDMC imports
 try:
@@ -25,6 +26,7 @@ CONFIG_CARRIER_NAME = "fcms_carrier_name"
 CONFIG_IMAGE_URL = "fcms_carrier_image"
 
 
+
 class PluginConfig:
     def __init__(self):
         self.plugin_name = "Fleet Carrier Discord Notifier"
@@ -36,6 +38,9 @@ class PluginConfig:
 
 
 config_state = PluginConfig()
+
+#toggle for whether to use get and use the fuel levels (requires EDSM server, and internet access)
+FUEL_MODE = True
 
 
 def plugin_start3(plugin_dir: str) -> str:
@@ -138,11 +143,84 @@ def calculate_times(departure_time: str) -> tuple:
         return lockdown_str, jump_str
     except Exception:
         return "<t:0:R>", "<t:0:R>"
+    
+def edsm_coords(system_name: str):
+    r = requests.get(
+        "https://www.edsm.net/api-v1/system",
+        params={"systemName": system_name, "showCoordinates": 1},
+        timeout=10,
+    )
+    js = r.json()
+    if isinstance(js, dict) and "coords" in js:
+        c = js["coords"]
+        return float(c["x"]), float(c["y"]), float(c["z"])
+    return None
+
+def ly_distance(a_name: str, b_name: str) -> float | None:
+    a = edsm_coords(a_name)
+    b = edsm_coords(b_name)
+    if not a or not b:
+        return None
+    (x1, y1, z1), (x2, y2, z2) = a, b
+    return math.sqrt((x2-x1)**2 + (y2-y1)**2 + (z2-z1)**2)
+
+_carrier_state: Dict[str, Any] = {
+    "fuel": 0,
+    "used": 0
+}
+
+def update_carrier_state(entry: Dict[str, Any]) -> None:
+    #Update carrier state cache from a CarrierStats event
+    global _carrier_state
+    _carrier_state["fuel"] = int(entry.get("FuelLevel") or 0)
+
+    space = entry.get("SpaceUsage") or {}
+    used = space.get("UsedSpace")
+    #UsedSpace is a bit fucked sometimes, back up option needed
+    if used is None:
+        total, free = space.get("TotalCapacity"), space.get("FreeSpace")
+        if total is not None and free is not None:
+            used = total - free
+    _carrier_state["used"] = int(used or 0)
+
+def get_carrier_state() -> tuple[int, int]:
+    #return carrier stats from dict
+    return _carrier_state["fuel"], _carrier_state["used"]
+
+def carrier_fuel_cost(start_system, end_system, fuel_level, used_space):
+    jump_distance = ly_distance(start_system, end_system)
+    
+    if not FUEL_MODE:
+        return jump_distance, None, None
+    
+    if jump_distance is None:
+        # couldn't resolve coords; signal “no estimate”
+        return None, None, fuel_level
+    
+    
+    if jump_distance > 500:
+        #if the current system is wrong, this could be above 500
+        return None, None, fuel_level
+
+    # clamp distance incase something else is wrong
+    d = max(0.0, min(500.0, float(jump_distance)))
+    total_mass = (fuel_level or 0) + (used_space or 0)
+
+    # community formula for fuel cost: 5 + d*(25_000 + mass)/200_000, rounded up
+    fuel_cost = math.ceil(5 + d * (25000 + total_mass) / 200000)
+
+    remaining_fuel = max(0, (fuel_level or 0) - fuel_cost)
+    return jump_distance, fuel_cost, remaining_fuel
+        
 
 
-def create_discord_embed(cmdr: str, system: str, station: str, entry: Dict[str, Any], image_url: str = "") -> Dict[str, Any]:
+def create_discord_embed(cmdr: str, system: str, station: str,
+                         entry: Dict[str, Any], fuel_level: int, used_space: int,
+                         image_url: str = "") -> Dict[str, Any]:
+    
     event_type = entry["event"]
     carrier_name = get_carrier_display_name()
+
     
     embed = {
         "timestamp": entry.get("timestamp", ""),
@@ -151,32 +229,67 @@ def create_discord_embed(cmdr: str, system: str, station: str, entry: Dict[str, 
     
     if image_url:
         embed["image"] = {"url": image_url}
+
     
     if event_type == "CarrierJumpRequest":
         departure_time = entry.get("DepartureTime", "")
         lockdown_time, jump_time = calculate_times(departure_time)
+        destination_system = entry.get("SystemName")
         destination_body = entry.get("Body", "Unknown")
+
+        jump_distance, fuel_cost, remaining_fuel = carrier_fuel_cost(system, destination_system, fuel_level, used_space)
         
+       
+        fields = [
+            {"name": "Departing from", "value": f"```{system}```", "inline": False},
+            {"name": "Headed to", "value": f"```{destination_system or destination_body}```", "inline": False},
+        ]
+
+        
+        if jump_distance is not None:
+            fields.append({
+                "name": "Jump Distance",
+                "value": f"```{jump_distance:.2f} ly```",
+                "inline": False
+            })
+        if fuel_cost not in (None, 0):
+            fields.append({
+                "name": "Estimated Fuel Usage",
+                "value": f"```{fuel_cost} t```",
+                "inline": False
+            })
+        if fuel_level not in (None, 0):
+            fields.append({
+                "name": "Remaining Tritium Level",
+                "value": f"```{remaining_fuel} t```",
+                "inline": False
+            })
+        fields.extend([
+            {"name": "Estimated lockdown time", "value": lockdown_time, "inline": True},
+            {"name": "Estimated jump time", "value": jump_time, "inline": True},
+        ])
+    
         embed.update({
             "title": "Frame Shift Drive Charging",
             "description": f"**{carrier_name}** is jumping.",
             "color": 0x3498db,
-            "fields": [
-                {"name": "Departing from", "value": f"```{system}```", "inline": False},
-                {"name": "Headed to", "value": f"```{destination_body}```", "inline": False},
-                {"name": "Estimated lockdown time", "value": lockdown_time, "inline": True},
-                {"name": "Estimated jump time", "value": jump_time, "inline": True}
-            ]
+            "fields": fields
         })
         
     elif event_type == "CarrierJumpCancelled":
+        fields = [
+            {"name": "Current Location", "value": f"```{system}```", "inline": False},
+        ]
+
+        if fuel_level not in (None, 0):
+            fields.extend([{"name": "Tritium Level", "value": f"```{fuel_level}t```", "inline": False}])
+        
         embed.update({
             "title": "Jump Sequence Cancelled",
             "description": f"**{carrier_name}** jump has been cancelled.",
             "color": 0xe74c3c,
-            "fields": [
-                {"name": "Current Location", "value": f"```{system}```", "inline": False}
-            ]
+            "fields": fields
+
         })
     
     return embed
@@ -206,9 +319,19 @@ def test_webhook() -> None:
         pass
 
 
-def journal_entry(cmdr: str, is_beta: bool, system: str, station: str, entry: Dict[str, Any], state: Dict[str, Any]) -> Optional[str]:
+def journal_entry(cmdr: str, is_beta: bool, system: str, station: str,
+                  entry: Dict[str, Any], state: Dict[str, Any]) -> Optional[str]:
+    
     event_type = entry.get("event")
     
+    # Grabs carrier info when management screen updated
+    if FUEL_MODE:
+        if event_type == "CarrierStats":
+            update_carrier_state(entry)
+            return None
+
+    fuel_level, used_space = get_carrier_state()
+
     if event_type not in ["CarrierJumpRequest", "CarrierJumpCancelled"] or is_beta:
         return None
     
@@ -220,7 +343,7 @@ def journal_entry(cmdr: str, is_beta: bool, system: str, station: str, entry: Di
         return "FCDN: Configure Fleet Carrier ID and Name in settings."
     
     image_url = config.get_str(CONFIG_IMAGE_URL) or ""
-    embed = create_discord_embed(cmdr, system, station, entry, image_url)
+    embed = create_discord_embed(cmdr, system, station, entry, fuel_level, used_space, image_url)
     
     try:
         response = requests.post(webhook_url, json={"embeds": [embed]}, timeout=30)
