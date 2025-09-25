@@ -4,7 +4,7 @@ Keep your squadron updated on your fleet carriers' movements at all times. This 
 You *need* webhook permissions in the channel that you're planning to use.
 ### Features
 - Keeps everyone on your Discord server informed about your Fleet Carriers' movements.
-- Allows customisation 
+- Allows customising what information gets displayed.
 - Calculates and displays fuel usage, distances, etc. (Optional).
 - Provides easily readable dynamic timestamps for lockdown and jump times to be extra clear about what's going on.
 - Provides the ability to show off your fleet carrier by using a custom image.
@@ -26,3 +26,4 @@ Fill out the required information and test your webhook. If that works - you're 
 ### Contributors
 - [aweeri](https://github.com/aweeri) – Original creator
 - [TotallyAm](https://github.com/TotallyAm) – Fuel cost & distance calculation feature
+- [SweetJonnySauce](https://github.com/SweetJonnySauce) – Ubuntu compatibility fix
