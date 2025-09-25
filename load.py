@@ -38,8 +38,6 @@ class PluginConfig:
 
 
 config_state = PluginConfig()
-
-#toggle for whether to use get and use the fuel levels (requires EDSM server, and internet access)
 FUEL_MODE = True
 
 
@@ -324,7 +322,6 @@ def journal_entry(cmdr: str, is_beta: bool, system: str, station: str,
     
     event_type = entry.get("event")
     
-    # Grabs carrier info when management screen updated
     if FUEL_MODE:
         if event_type == "CarrierStats":
             update_carrier_state(entry)
