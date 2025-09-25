@@ -20,3 +20,7 @@ Fill out the required information and test your webhook. If that works - you're 
 ### What it looks like in reality
 <img width="551" height="697" alt="image" src="https://github.com/user-attachments/assets/4374eb32-bc83-4932-a54e-f7ee519e8d2c" />
 <img width="553" height="561" alt="image" src="https://github.com/user-attachments/assets/df8181bb-7717-44d9-98c0-0857dd050bf5" />
+
+### Contributors
+- [aweeri](https://github.com/aweeri) – Original creator
+- [TotallyAm](https://github.com/TotallyAm) – Fuel cost & distance calculation feature
