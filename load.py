@@ -45,12 +45,14 @@ CONFIG_SHOW_DISTANCE = "fcms_show_distance"
 CONFIG_SHOW_USAGE = "fcms_show_usage"
 CONFIG_SHOW_REMAINING = "fcms_show_remaining"
 CONFIG_SHOW_TRITIUM_CANCEL = "fcms_show_tritium_cancel"
+CONFIG_SHOW_UI = "fcms_show_ui"
 
+showUI = False
 
 class PluginConfig:
     def __init__(self):
         self.plugin_name = "Fleet Carrier Discord Notifier"
-        self.version = "1.1.1"
+        self.version = "1.1.2"
         self.webhook_entry = None
         self.id_entry = None
         self.name_entry = None
@@ -60,6 +62,7 @@ class PluginConfig:
         self.show_usage_var = None
         self.show_remaining_var = None
         self.show_tritium_cancel_var = None
+        self.show_ui_var = None  # Add this line
         self.latest_version = None  # Store the latest version from GitHub
 
 
@@ -78,9 +81,13 @@ def is_valid_url(url: str) -> bool:
 def plugin_start3(plugin_dir: str) -> str:
     logger.info("Plugin started")
     
+    global showUI
+    showUI = config.get_bool(CONFIG_SHOW_UI) if config.get_bool(CONFIG_SHOW_UI) is not None else False
+    logger.debug(f"Initialized showUI from config: {showUI}")
+    
     # Check for latest version on plugin boot
     try:
-        response = requests.get("https://raw.githubusercontent.com/aweeri/FCDN/refs/heads/main/VERSION", timeout=10)
+        response = requests.get("https://raw.githubusercontent.com/aweeri/FCDN/refs/heads/main/VERSION", timeout=5)
         if response.status_code == 200:
             config_state.latest_version = response.text.strip()
             logger.info(f"Latest version available: {config_state.latest_version}")
@@ -96,11 +103,46 @@ def plugin_stop() -> None:
     logger.info("Plugin stopped")
 
 
+
 def plugin_app(parent: tk.Frame) -> Optional[tk.Frame]:
-    return None
+    """
+    EDMC main window plugin UI
+    """
+    # Create main frame
+    frame = tk.Frame(parent)
+    
+    # Boolean to control section visibility
+    show_section = showUI
+    
+    # Create collapsible section for Market Announcements
+    market_frame = tk.LabelFrame(frame, text="FCDN", padx=5, pady=5)
+    
+    # Only pack the market frame if show_section is True
+    if show_section:
+        market_frame.pack(fill="x", expand=False, pady=5, padx=5)
+    
+        # Create button frame inside the market section
+        button_frame = tk.Frame(market_frame)
+        button_frame.pack(fill="x", expand=True, pady=5)
+    
+        sell_button = tk.Button(button_frame, text="Selling", command=fcdn_sell_action, width=10)
+        sell_button.pack(side="left", padx=5, expand=True)
+    
+        buy_button = tk.Button(button_frame, text="Buying", command=fcdn_buy_action, width=10)
+        buy_button.pack(side="left", padx=5, expand=True)
+    
+        # Add some informational text
+        info_label = tk.Label(market_frame, text="Announce market operations to Discord", font=("", 8), fg="gray")
+        info_label.pack(pady=(0, 5))
+    
+    return frame
 
 
 def plugin_prefs(parent: nb.Notebook, cmdr: str, is_beta: bool) -> Optional[tk.Frame]:
+    """
+    FCDN settings UI
+    """
+    logger.debug("Loading plugin preferences UI")
     frame = nb.Frame(parent)
     frame.columnconfigure(1, weight=1)
     
@@ -188,11 +230,19 @@ def plugin_prefs(parent: nb.Notebook, cmdr: str, is_beta: bool) -> Optional[tk.F
     
     current_row += 1
     
-    # Tritium on cancel checkbox - now separate from EDSM integration
+    # Tritium on cancel checkbox
     show_tritium_cancel_default = config.get_bool(CONFIG_SHOW_TRITIUM_CANCEL) if config.get_bool(CONFIG_SHOW_TRITIUM_CANCEL) is not None else True
     config_state.show_tritium_cancel_var = tk.BooleanVar(value=show_tritium_cancel_default)
     config_state.show_tritium_cancel_checkbox = nb.Checkbutton(frame, text="Show Tritium on Jump cancel", variable=config_state.show_tritium_cancel_var)
     config_state.show_tritium_cancel_checkbox.grid(row=current_row, column=0, columnspan=2, padx=10, pady=(10, 5), sticky=tk.W)
+    
+    current_row += 1
+    
+    # Show UI checkbox
+    show_ui_default = config.get_bool(CONFIG_SHOW_UI) if config.get_bool(CONFIG_SHOW_UI) is not None else False
+    config_state.show_ui_var = tk.BooleanVar(value=show_ui_default)
+    config_state.show_ui_checkbox = nb.Checkbutton(frame, text="Show extras in main UI (Needs restart)", variable=config_state.show_ui_var)
+    config_state.show_ui_checkbox.grid(row=current_row, column=0, columnspan=2, padx=10, pady=(10, 5), sticky=tk.W)
     
     current_row += 1
     
@@ -253,7 +303,11 @@ def prefs_changed(cmdr: str, is_beta: bool) -> None:
     if config_state.show_tritium_cancel_var is not None:
         config.set(CONFIG_SHOW_TRITIUM_CANCEL, config_state.show_tritium_cancel_var.get())
         logger.debug(f"Show tritium on cancel set to: {config_state.show_tritium_cancel_var.get()}")
-
+    if config_state.show_ui_var is not None:
+        config.set(CONFIG_SHOW_UI, config_state.show_ui_var.get())
+        global showUI
+        showUI = config_state.show_ui_var.get()
+        logger.debug(f"Show UI set to: {showUI}")
 
 
 
@@ -493,8 +547,122 @@ def create_discord_embed(cmdr: str, system: str, station: str,
     
     return embed
 
+def fcdn_sell_action() -> None:
+    """
+    Post fleet carrier sell action to Discord webhook with formatted market data.
+    """
+    # example data - replace with actual market data retrieval
+    market_items = [
+        ("Aluminum", 1500, 750000),
+        ("Void Opals", 800, 950000),
+        ("Tritium", 50000, 50000),
+        ("Gold", 2500, 45000)
+    ]
+    
+    # Use saved config
+    webhook_url = config.get_str(CONFIG_WEBHOOK) or ""
+    image_url = config.get_str(CONFIG_IMAGE_URL) or ""
+    
+    if not webhook_url.startswith(
+        ("https://discord.com/api/webhooks/", "https://discordapp.com/api/webhooks/")
+    ):
+        logger.warning("Invalid webhook URL format")
+        return
+    
+    # Validate image URL
+    if image_url and not is_valid_url(image_url):
+        logger.warning(f"Image URL should start with http:// or https://: {image_url}")
+    
+    # Compact items description
+    items_description = ""
+    for name, supply, price in market_items:
+        formatted_supply = f"{supply:,}" if isinstance(supply, int) else str(supply)
+        formatted_price = f"{price:,}" if isinstance(price, (int, float)) else str(price)
+        items_description += f"**{name}**\n`{formatted_supply} t` @ `{formatted_price} cr`\n"
+    
+    embed = {
+        "title": "Fleet Carrier Market Update",
+        "description": "### **Currently Selling:**\n" + items_description,
+        "color": 0x00ff00,
+        "footer": {"text": "EDMC FCDN - Manual Sell Announcement"}
+    }
+    
+    # Add image only if URL is valid
+    if is_valid_url(image_url):
+        embed["image"] = {"url": image_url.strip()}
+        logger.debug(f"Posting sell action with image URL: {image_url}")
+    
+    try:
+        payload = {"embeds": [embed]}
+        response = requests.post(webhook_url, json=payload, timeout=10)
+        if response.status_code in [200, 204]:
+            logger.info(f"FCDN sell action posted successfully for {len(market_items)} items")
+        else:
+            logger.warning(f"FCDN sell action failed with status: {response.status_code}")
+            logger.debug(f"Response content: {response.text}")
+    except Exception as e:
+        logger.error(f"FCDN sell action error: {e}")
+
+def fcdn_buy_action():
+    """
+    Post fleet carrier buy action to Discord webhook with formatted market data.
+    """
+    # example data - replace with actual market data retrieval
+    market_items = [
+        ("Aluminum", 1500, 750000),
+        ("Void Opals", 800, 950000),
+        ("Tritium", 50000, 50000),
+        ("Gold", 2500, 45000)
+    ]
+    
+    # Use saved config
+    webhook_url = config.get_str(CONFIG_WEBHOOK) or ""
+    image_url = config.get_str(CONFIG_IMAGE_URL) or ""
+    
+    if not webhook_url.startswith(
+        ("https://discord.com/api/webhooks/", "https://discordapp.com/api/webhooks/")
+    ):
+        logger.warning("Invalid webhook URL format")
+        return
+    
+    # Validate image URL
+    if image_url and not is_valid_url(image_url):
+        logger.warning(f"Image URL should start with http:// or https://: {image_url}")
+    
+    # Compact items description
+    items_description = ""
+    for name, demand, price in market_items:
+        formatted_demand = f"{demand:,}" if isinstance(demand, int) else str(demand)
+        formatted_price = f"{price:,}" if isinstance(price, (int, float)) else str(price)
+        items_description += f"**{name}**\n`{formatted_demand} t` @ `{formatted_price} cr`\n"
+    
+    embed = {
+        "title": "Fleet Carrier Market Update",
+        "description": "### **Currently Buying:**\n" + items_description,
+        "color": 0x00ff00,
+        "footer": {"text": "EDMC FCDN - Manual Buy Announcement"}
+    }
+    
+    # Add image only if URL is valid
+    if is_valid_url(image_url):
+        embed["image"] = {"url": image_url.strip()}
+        logger.debug(f"Posting buy action with image URL: {image_url}")
+    
+    try:
+        payload = {"embeds": [embed]}
+        response = requests.post(webhook_url, json=payload, timeout=10)
+        if response.status_code in [200, 204]:
+            logger.info(f"FCDN buy action posted successfully for {len(market_items)} items")
+        else:
+            logger.warning(f"FCDN buy action failed with status: {response.status_code}")
+            logger.debug(f"Response content: {response.text}")
+    except Exception as e:
+        logger.error(f"FCDN buy action error: {e}")
 
 def test_webhook() -> None:
+    """
+        Test webhook
+    """
     webhook_url = config_state.webhook_entry.get().strip() if config_state.webhook_entry else ""
     image_url = config_state.image_entry.get().strip() if config_state.image_entry else ""
     
