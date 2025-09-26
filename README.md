@@ -29,3 +29,4 @@ Fill out the required information and test your webhook. If that works - you're 
 - [aweeri](https://github.com/aweeri) – Original creator
 - [TotallyAm](https://github.com/TotallyAm) – Fuel cost & distance calculation feature
 - [SweetJonnySauce](https://github.com/SweetJonnySauce) – Ubuntu compatibility fix
+- [MrTagnan](https://github.com/MrTagnan) – "pls add me" + contributed imagery and minimal design adjustments
