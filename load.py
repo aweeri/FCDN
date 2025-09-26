@@ -52,7 +52,7 @@ showUI = False
 class PluginConfig:
     def __init__(self):
         self.plugin_name = "Fleet Carrier Discord Notifier"
-        self.version = "1.1.2"
+        self.version = "1.1.3"
         self.webhook_entry = None
         self.id_entry = None
         self.name_entry = None
@@ -718,7 +718,7 @@ def journal_entry(cmdr: str, is_beta: bool, system: str, station: str,
 
     fuel_level, used_space, carrier_id = get_carrier_state()
 
-    logger.debug(f"Detected carrier callsign: {carrier_id}")
+    # logger.debug(f"Detected carrier callsign: {carrier_id}")
 
     if event_type not in ["CarrierJumpRequest", "CarrierJumpCancelled"] or is_beta:
         return None
