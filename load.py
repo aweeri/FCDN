@@ -581,7 +581,7 @@ def fcdn_sell_action() -> None:
         items_description += f"**{name}**\n`{formatted_supply} t` @ `{formatted_price} cr`\n"
     
     embed = {
-        "title": "Fleet Carrier Market Update",
+        "title": "Fleet Carrier Market Update - WORK IN PROGRESS",
         "description": "### **Currently Selling:**\n" + items_description,
         "color": 0x00ff00,
         "footer": {"text": "EDMC FCDN - Manual Sell Announcement"}
@@ -637,7 +637,7 @@ def fcdn_buy_action():
         items_description += f"**{name}**\n`{formatted_demand} t` @ `{formatted_price} cr`\n"
     
     embed = {
-        "title": "Fleet Carrier Market Update",
+        "title": "Fleet Carrier Market Update - WORK IN PROGRESS",
         "description": "### **Currently Buying:**\n" + items_description,
         "color": 0x00ff00,
         "footer": {"text": "EDMC FCDN - Manual Buy Announcement"}
