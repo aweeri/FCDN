@@ -11,6 +11,8 @@ import requests
 import math
 import logging
 import os
+# lru_cache to avoid repeated EDSM lookups
+from functools import lru_cache  
 
 # EDMC imports
 try:
@@ -36,7 +38,6 @@ if not logger.hasHandlers():
 
 # Configuration keys
 CONFIG_WEBHOOK = "fcms_discord_webhook"
-CONFIG_CARRIER_ID = "fcms_carrier_id"
 CONFIG_CARRIER_NAME = "fcms_carrier_name"
 CONFIG_IMAGE_URL = "fcms_carrier_image"
 CONFIG_FUEL_MODE = "fcms_fuel_mode"
@@ -64,9 +65,6 @@ class PluginConfig:
 
 config_state = PluginConfig()
 
-#toggle for whether to use get and use extended functionality (requires EDSM server, and internet access)
-FUEL_MODE = True
-_carrier_state = {"fuel": 0, "used": 0}
 
 
 def is_valid_url(url: str) -> bool:
@@ -119,7 +117,6 @@ def plugin_prefs(parent: nb.Notebook, cmdr: str, is_beta: bool) -> Optional[tk.F
     
     settings = [
         ("Discord Webhook URL:", "webhook_entry"),
-        ("Fleet Carrier ID:", "id_entry"),
         ("Fleet Carrier Name:", "name_entry"),
         ("Carrier Image URL:", "image_entry")
     ]
@@ -133,13 +130,11 @@ def plugin_prefs(parent: nb.Notebook, cmdr: str, is_beta: bool) -> Optional[tk.F
     
     # Load current values
     config_state.webhook_entry.insert(0, config.get_str(CONFIG_WEBHOOK) or "")
-    config_state.id_entry.insert(0, config.get_str(CONFIG_CARRIER_ID) or "")
     config_state.name_entry.insert(0, config.get_str(CONFIG_CARRIER_NAME) or "")
     config_state.image_entry.insert(0, config.get_str(CONFIG_IMAGE_URL) or "")
     
     help_text = [
-        "Webhook URL: Discord → Server Settings → Integrations → Webhooks → New Webhook",
-        "Carrier ID: Your Fleet Carrier ID (e.g., K3B-43M)",
+        "Webhook URL: Discord â†’ Server Settings â†’ Integrations â†’ Webhooks â†’ New Webhook",
         "Carrier Name: Your Fleet Carrier Name (e.g., VOYAGER I)",
         "Image URL: URL for carrier image. Must start with http:// or https://"
     ]
@@ -166,7 +161,7 @@ def plugin_prefs(parent: nb.Notebook, cmdr: str, is_beta: bool) -> Optional[tk.F
     
     fuel_mode_default = config.get_bool(CONFIG_FUEL_MODE) if config.get_bool(CONFIG_FUEL_MODE) is not None else True
     config_state.fuel_mode_var = tk.BooleanVar(value=fuel_mode_default)
-    fuel_mode_checkbox = nb.Checkbutton(frame, text="Enable EDSM Integration (Carrier ID MUST be set up correctly in order for this to work.)", variable=config_state.fuel_mode_var, command=update_fuel_options)
+    fuel_mode_checkbox = nb.Checkbutton(frame, text="Enable EDSM Integration", variable=config_state.fuel_mode_var, command=update_fuel_options)
     fuel_mode_checkbox.grid(row=current_row, column=0, columnspan=2, padx=10, pady=(15, 5), sticky=tk.W)
     
     current_row += 1
@@ -237,8 +232,6 @@ def prefs_changed(cmdr: str, is_beta: bool) -> None:
     
     if config_state.webhook_entry:
         config.set(CONFIG_WEBHOOK, config_state.webhook_entry.get().strip())
-    if config_state.id_entry:
-        config.set(CONFIG_CARRIER_ID, config_state.id_entry.get().strip())
     if config_state.name_entry:
         config.set(CONFIG_CARRIER_NAME, config_state.name_entry.get().strip())
     if config_state.image_entry:
@@ -246,9 +239,7 @@ def prefs_changed(cmdr: str, is_beta: bool) -> None:
     
     if config_state.fuel_mode_var is not None:
         config.set(CONFIG_FUEL_MODE, config_state.fuel_mode_var.get())
-        global FUEL_MODE
-        FUEL_MODE = config_state.fuel_mode_var.get()
-        logger.debug(f"Fuel mode set to: {FUEL_MODE}")
+        logger.debug(f"Integration mode set to: {config_state.fuel_mode_var.get()}")  # CHANGE
     
     if config_state.show_distance_var is not None:
         config.set(CONFIG_SHOW_DISTANCE, config_state.show_distance_var.get())
@@ -264,17 +255,8 @@ def prefs_changed(cmdr: str, is_beta: bool) -> None:
         logger.debug(f"Show tritium on cancel set to: {config_state.show_tritium_cancel_var.get()}")
 
 
-def get_carrier_display_name() -> str:
-    carrier_id = config.get_str(CONFIG_CARRIER_ID) or ""
-    carrier_name = config.get_str(CONFIG_CARRIER_NAME) or ""
-    
-    if carrier_id and carrier_name:
-        return f"{carrier_name} ({carrier_id})"
-    elif carrier_id:
-        return carrier_id
-    elif carrier_name:
-        return carrier_name
-    return "Fleet Carrier"
+
+
 
 
 def calculate_times(departure_time: str) -> tuple:
@@ -290,6 +272,8 @@ def calculate_times(departure_time: str) -> tuple:
         return "<t:0:R>", "<t:0:R>"
     
 
+# cache EDSM responses to reduce API load
+@lru_cache(maxsize=4096)
 def edsm_coords(system_name: str):
     try:
         r = requests.get(
@@ -316,6 +300,7 @@ def ly_distance(a_name: str, b_name: str) -> float | None:
     (x1, y1, z1), (x2, y2, z2) = a, b
     return math.sqrt((x2-x1)**2 + (y2-y1)**2 + (z2-z1)**2)
 
+_carrier_state = {"fuel": 0, "used": 0, "id": "Unknown"}
 
 def update_carrier_state(entry: Dict[str, Any]) -> None:
     #Update carrier state cache from a CarrierStats event
@@ -329,19 +314,24 @@ def update_carrier_state(entry: Dict[str, Any]) -> None:
         total, free = space.get("TotalCapacity"), space.get("FreeSpace")
         if total is not None and free is not None:
             used = total - free
+    
     _carrier_state["used"] = int(used or 0)
+
+    _carrier_state["id"] = entry.get("Callsign")
+    
     logger.debug(f"Carrier state updated - fuel: {_carrier_state['fuel']}, used: {_carrier_state['used']}")
 
 
 def get_carrier_state() -> tuple[int, int]:
-    return _carrier_state["fuel"], _carrier_state["used"]
+    return _carrier_state["fuel"], _carrier_state["used"], _carrier_state["id"]
 
 
-def carrier_fuel_cost(start_system, end_system, fuel_level, used_space):
-    jump_distance = ly_distance(start_system, end_system)
+# obey integration flag; never call EDSM when disabled
+def carrier_fuel_cost(start_system, end_system, fuel_level, used_space, integration_enabled: bool):
+    if not integration_enabled:  
+        return None, None, None  
     
-    if not FUEL_MODE:
-        return jump_distance, None, None
+    jump_distance = ly_distance(start_system, end_system)
     
     if jump_distance is None:
         logger.debug(f"Could not calculate distance between {start_system} and {end_system}")
@@ -364,13 +354,12 @@ def carrier_fuel_cost(start_system, end_system, fuel_level, used_space):
     return jump_distance, fuel_cost, remaining_fuel
 
 
-def is_player_on_their_carrier(state: Dict[str, Any]) -> bool:
-    configured_carrier_id = config.get_str(CONFIG_CARRIER_ID) or ""
+def is_player_on_their_carrier(state: Dict[str, Any], carrier_id) -> bool:
     station_name = state.get('StationName', '')
     
-    logger.debug(f"Carrier validation - Configured ID: '{configured_carrier_id}', Station: '{station_name}'")
+    logger.debug(f"Carrier validation - Configured ID: '{carrier_id}', Station: '{station_name}'")
     
-    if not configured_carrier_id:
+    if not carrier_id:
         logger.warning("No carrier ID configured in settings")
         return False
     
@@ -379,28 +368,29 @@ def is_player_on_their_carrier(state: Dict[str, Any]) -> bool:
         return False
     
     # Check if the configured carrier ID appears in the station name
-    carrier_id_clean = configured_carrier_id.replace('-', '').replace(' ', '').upper()
+    carrier_id_clean = carrier_id.replace('-', '').replace(' ', '').upper()
     station_clean = station_name.replace('-', '').replace(' ', '').upper()
     
     # Also check if station name contains the full carrier ID with dashes
-    contains_id = (carrier_id_clean in station_clean) or (configured_carrier_id.upper() in station_name.upper())
+    contains_id = (carrier_id_clean in station_clean) or (carrier_id.upper() in station_name.upper())
     
     logger.debug(f"Carrier validation - Clean ID: '{carrier_id_clean}', Clean Station: '{station_clean}', Match: {contains_id}")
     
     if contains_id:
-        logger.info(f"Player confirmed on their carrier: {station_name} matches configured ID {configured_carrier_id}")
+        logger.info(f"Player confirmed on their carrier: {station_name} matches configured ID {carrier_id}")
         return True
     else:
-        logger.warning(f"Player not on their carrier. Station '{station_name}' doesn't match configured ID '{configured_carrier_id}'")
+        logger.warning(f"Player not on their carrier. Station '{station_name}' doesn't match configured ID '{carrier_id}'")
         return False
 
 
 def create_discord_embed(cmdr: str, system: str, station: str,
-                         entry: Dict[str, Any], fuel_level: int, used_space: int,
+                         entry: Dict[str, Any], fuel_level: int, used_space: int, carrier_id : int,
                          image_url: str = "", on_own_carrier: bool = True) -> Dict[str, Any]:
     
     event_type = entry["event"]
-    carrier_name = get_carrier_display_name()
+    carrier_name = config.get_str(CONFIG_CARRIER_NAME) + " (" + carrier_id + ")"
+    logger.debug(f"Assigned carrier name is: {carrier_name}")
 
     embed = {
         "timestamp": entry.get("timestamp", ""),
@@ -422,7 +412,10 @@ def create_discord_embed(cmdr: str, system: str, station: str,
 
         if on_own_carrier:
             # Player is on their carrier - calculate everything normally
-            jump_distance, fuel_cost, remaining_fuel = carrier_fuel_cost(system, destination_system, fuel_level, used_space)
+            integration_enabled = bool(config.get_bool(CONFIG_FUEL_MODE))  
+            jump_distance, fuel_cost, remaining_fuel = carrier_fuel_cost(  
+                system, destination_system, fuel_level, used_space, integration_enabled
+            ) 
             
             fields = [
                 {"name": "Departing from", "value": f"```{system}```", "inline": False},
@@ -433,22 +426,26 @@ def create_discord_embed(cmdr: str, system: str, station: str,
             show_distance = config.get_bool(CONFIG_SHOW_DISTANCE)
             show_usage = config.get_bool(CONFIG_SHOW_USAGE)
             show_remaining = config.get_bool(CONFIG_SHOW_REMAINING)
+
             
             logger.debug(f"Checkbox states - Distance: {show_distance}, Usage: {show_usage}, Remaining: {show_remaining}")
             
+            #whether to add jump distance info
             if show_distance and jump_distance is not None:
                 fields.append({
                     "name": "Jump Distance",
                     "value": f"```{jump_distance:.2f} ly```",
                     "inline": False
                 })
+            #whether to add fuel usage (when enabled and not invalid)
             if show_usage and fuel_cost not in (None, 0):
                 fields.append({
                     "name": "Estimated Fuel Usage",
                     "value": f"```{fuel_cost} t```",
                     "inline": False
                 })
-            if show_remaining and fuel_level not in (None, 0):
+            # whether to show remaining fuel (when valid, and enabled)
+            if show_remaining and fuel_level not in (None, 0):  
                 fields.append({
                     "name": "Tritium After Jump",
                     "value": f"```{remaining_fuel} t```",
@@ -541,14 +538,19 @@ def journal_entry(cmdr: str, is_beta: bool, system: str, station: str,
                   entry: Dict[str, Any], state: Dict[str, Any]) -> Optional[str]:
     
     event_type = entry.get("event")
-    
-    # Grabs carrier info when management screen updated
-    if FUEL_MODE:
-        if event_type == "CarrierStats":
-            update_carrier_state(entry)
-            return None
+    #integration is for EDSM configs
+    integration_enabled = bool(config.get_bool(CONFIG_FUEL_MODE))          
+    show_trit_on_cancel = bool(config.get_bool(CONFIG_SHOW_TRITIUM_CANCEL))
 
-    fuel_level, used_space = get_carrier_state()
+    # Grabs carrier info when management screen updated
+    # update CarrierStats if *either* integration is on OR cancel-fuel is enabled
+    if (integration_enabled or show_trit_on_cancel) and event_type == "CarrierStats": 
+        update_carrier_state(entry)
+        return None
+
+    fuel_level, used_space, carrier_id = get_carrier_state()
+
+    logger.debug(f"Detected carrier callsign: {carrier_id}")
 
     if event_type not in ["CarrierJumpRequest", "CarrierJumpCancelled"] or is_beta:
         return None
@@ -560,12 +562,12 @@ def journal_entry(cmdr: str, is_beta: bool, system: str, station: str,
         logger.warning("Webhook URL not configured or invalid")
         return "FCDN: Configure Discord webhook URL in settings."
     
-    if not config.get_str(CONFIG_CARRIER_ID) and not config.get_str(CONFIG_CARRIER_NAME):
-        logger.warning("Carrier ID and Name not configured")
-        return "FCDN: Configure Fleet Carrier ID and Name in settings."
+    if not config.get_str(CONFIG_CARRIER_NAME):
+        logger.warning("Carrier Name not configured")
+        return "FCDN: Configure Fleet Name in settings."
     
     # CRITICAL: Check if player is on their own carrier before processing
-    on_own_carrier = is_player_on_their_carrier(state)
+    on_own_carrier = is_player_on_their_carrier(state, carrier_id)
     logger.info(f"Processing {event_type} - Player on their carrier: {on_own_carrier}")
     
     image_url = config.get_str(CONFIG_IMAGE_URL) or ""
@@ -574,7 +576,7 @@ def journal_entry(cmdr: str, is_beta: bool, system: str, station: str,
     if image_url and not is_valid_url(image_url):
         logger.warning(f"Invalid image URL format (must start with http:// or https://): {image_url}")
     
-    embed = create_discord_embed(cmdr, system, station, entry, fuel_level, used_space, image_url, on_own_carrier)
+    embed = create_discord_embed(cmdr, system, station, entry, fuel_level, used_space, carrier_id, image_url, on_own_carrier)
     
     try:
         logger.info(f"Sending {event_type} notification to Discord (on_own_carrier: {on_own_carrier})")
