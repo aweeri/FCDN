@@ -5,7 +5,7 @@ You *need* webhook permissions in the channel that you're planning to use.
 ### Features
 - Keeps everyone on your Discord server informed about your Fleet Carriers' movements.
 - Allows customising what information gets displayed.
-- Does not lie about the origin (departure) system unlike other plugins. You can be sure that the information provided is always accurate.
+- Does not lie about the origin (departure) system unlike other plugins. You can be sure that the information provided is always accurate, no matter the CMDR's location.
 - Calculates and displays fuel usage, distances, etc. (Optional).
 - Provides easily readable dynamic timestamps for lockdown and jump times to be extra clear about what's going on.
 - Provides the ability to show off your fleet carrier by using a custom image.
