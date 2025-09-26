@@ -554,7 +554,9 @@ def journal_entry(cmdr: str, is_beta: bool, system: str, station: str,
         return None
     
     webhook_url = config.get_str(CONFIG_WEBHOOK) or ""
-    if not webhook_url.startswith("https://discord.com/api/webhooks/"):
+    if not webhook_url.startswith(
+        ("https://discord.com/api/webhooks/", "https://discordapp.com/api/webhooks/")
+    ):
         logger.warning("Webhook URL not configured or invalid")
         return "FCDN: Configure Discord webhook URL in settings."
     
