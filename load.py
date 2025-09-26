@@ -49,7 +49,7 @@ CONFIG_SHOW_TRITIUM_CANCEL = "fcms_show_tritium_cancel"
 class PluginConfig:
     def __init__(self):
         self.plugin_name = "Fleet Carrier Discord Notifier"
-        self.version = "1.1.0"
+        self.version = "1.1.1"
         self.webhook_entry = None
         self.id_entry = None
         self.name_entry = None
