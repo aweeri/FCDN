@@ -21,7 +21,8 @@ Fill out the required information and test your webhook. If that works - you're 
 <img width="978" height="437" alt="image" src="https://github.com/user-attachments/assets/e5bd6c60-f465-485c-b396-8739730f4566" />
 
 ### What it looks like in reality
-<img width="551" height="697" alt="image" src="https://github.com/user-attachments/assets/4374eb32-bc83-4932-a54e-f7ee519e8d2c" />
+<img width="346" height="562" alt="Screenshot 2025-09-27 014409" src="https://github.com/user-attachments/assets/9729b33a-34ba-40a0-868e-3e41c2f9be82" />
+
 <img width="553" height="561" alt="image" src="https://github.com/user-attachments/assets/df8181bb-7717-44d9-98c0-0857dd050bf5" />
 
 ### Contributors
