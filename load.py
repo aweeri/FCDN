@@ -11,6 +11,8 @@ import requests
 import math
 import logging
 import os
+import json
+import pathlib
 # lru_cache to avoid repeated EDSM lookups
 from functools import lru_cache  
 
@@ -48,6 +50,18 @@ CONFIG_SHOW_TRITIUM_CANCEL = "fcms_show_tritium_cancel"
 CONFIG_SHOW_UI = "fcms_show_ui"
 
 showUI = False
+
+_market_state = {
+    "items"       : [],        # list[dict] from Market["Items"]
+    "last_updated": "",        # ISO8601 from Market["timestamp"]
+    "station_type": "Unknown", # string from Market["StationType"]
+    "market_id"   : "Unkown"   # string from Market["MarketID"]
+}
+
+_carrier_state = {
+    "fuel"  : 0,         # int from CarrierStats["FuelLevel"]
+    "used"  : 0,         # int from CarrierStats["UsedSpace"]
+    "id"    : "Unknown"} # string from CarrierStats["Callsign"]
 
 class PluginConfig:
     def __init__(self):
@@ -310,7 +324,32 @@ def prefs_changed(cmdr: str, is_beta: bool) -> None:
         logger.debug(f"Show UI set to: {showUI}")
 
 
+def _read_market_json_to_cache() -> bool:
+    #try to read market.json
+    #returns True if it does
+    try:
+        # %USERPROFILE%\Saved Games\Frontier Developments\Elite Dangerous\Market.json
+        base = pathlib.Path.home() / "Saved Games" / "Frontier Developments" / "Elite Dangerous"
+        path = base / "Market.json"
+        with path.open("r", encoding="utf-8") as f:
+            js = json.load(f)
 
+        items = js.get("Items") or []
+        ts = js.get("timestamp") or ""
+        if items:
+            _market_state["items"] = items
+            if ts:
+                _market_state["last_updated"] = ts
+            _market_state["station_type"] = js.get("StationType")
+            _market_state["market_id"] = js.get("MarketID")
+            logger.debug(f"Market cache updated from Market.json: {len(items)} items")
+            return True
+        else:
+            logger.debug("Market.json read OK but contained no Items")
+            return False
+    except Exception as e:
+        logger.debug(f"Market.json read failed: {e}")
+        return False
 
 
 def calculate_times(departure_time: str) -> tuple:
@@ -354,7 +393,7 @@ def ly_distance(a_name: str, b_name: str) -> float | None:
     (x1, y1, z1), (x2, y2, z2) = a, b
     return math.sqrt((x2-x1)**2 + (y2-y1)**2 + (z2-z1)**2)
 
-_carrier_state = {"fuel": 0, "used": 0, "id": "Unknown"}
+
 
 def update_carrier_state(entry: Dict[str, Any]) -> None:
     #Update carrier state cache from a CarrierStats event
@@ -374,10 +413,26 @@ def update_carrier_state(entry: Dict[str, Any]) -> None:
     _carrier_state["id"] = entry.get("Callsign")
     
     logger.debug(f"Carrier state updated - fuel: {_carrier_state['fuel']}, used: {_carrier_state['used']}")
-
+    
 
 def get_carrier_state() -> tuple[int, int]:
     return _carrier_state["fuel"], _carrier_state["used"], _carrier_state["id"]
+
+def update_market_state(entry: dict) -> None:
+    #refresh from Market.json
+    if _read_market_json_to_cache():
+        logger.debug("Market cache refreshed from Market.json")  # CHANGE
+    else:
+        logger.debug("Market cache NOT refreshed (Market.json missing/empty)")  # CHANGE
+
+def get_market_state() -> tuple[list[dict], str]:
+    # return items, last_updated
+    return (
+        list(_market_state["items"]),
+        _market_state["last_updated"] or "",
+        _market_state["station_type"] or "",
+        _market_state["market_id"] or 0,
+    )
 
 
 # obey integration flag; never call EDSM when disabled
@@ -406,7 +461,6 @@ def carrier_fuel_cost(start_system, end_system, fuel_level, used_space, integrat
     
     logger.debug(f"Fuel calculation: distance={d:.2f} ly, cost={fuel_cost} t, remaining={remaining_fuel} t")
     return jump_distance, fuel_cost, remaining_fuel
-
 
 def is_player_on_their_carrier(state: Dict[str, Any], carrier_id) -> bool:
     station_name = state.get('StationName', '')
@@ -437,13 +491,13 @@ def is_player_on_their_carrier(state: Dict[str, Any], carrier_id) -> bool:
         logger.warning(f"Player not on their carrier. Station '{station_name}' doesn't match configured ID '{carrier_id}'")
         return False
 
-
 def create_discord_embed(cmdr: str, system: str, station: str,
                          entry: Dict[str, Any], fuel_level: int, used_space: int, carrier_id : int,
                          image_url: str = "", on_own_carrier: bool = True) -> Dict[str, Any]:
     
     event_type = entry["event"]
     carrier_name = config.get_str(CONFIG_CARRIER_NAME) + " (" + carrier_id + ")"
+    
     logger.debug(f"Assigned carrier name is: {carrier_name}")
 
     embed = {
@@ -547,117 +601,125 @@ def create_discord_embed(cmdr: str, system: str, station: str,
     
     return embed
 
-def fcdn_sell_action() -> None:
-    """
-    Post fleet carrier sell action to Discord webhook with formatted market data.
-    """
-    # example data - replace with actual market data retrieval
-    market_items = [
-        ("Aluminum", 1500, 750000),
-        ("Void Opals", 800, 950000),
-        ("Tritium", 50000, 50000),
-        ("Gold", 2500, 45000)
-    ]
+def build_market_embed(is_selling: bool) -> tuple[dict, int]:
+    items, ts, station_type, market_id = get_market_state()
     
-    # Use saved config
-    webhook_url = config.get_str(CONFIG_WEBHOOK) or ""
-    image_url = config.get_str(CONFIG_IMAGE_URL) or ""
+    if station_type != "FleetCarrier":
+        logger.debug(f"Market snapshot ignored: StationType={station_type}, MarketID={market_id}")
+        return {
+           "title": "Fleet Carrier Market Update",
+           "description": "_No fleet carrier market data available._",
+          "color": 0x808080,
+          "footer": {"text": "EDMC FCDN - Market filter"},
+     }, 0
     
-    if not webhook_url.startswith(
-        ("https://discord.com/api/webhooks/", "https://discordapp.com/api/webhooks/")
-    ):
-        logger.warning("Invalid webhook URL format")
-        return
-    
-    # Validate image URL
-    if image_url and not is_valid_url(image_url):
-        logger.warning(f"Image URL should start with http:// or https://: {image_url}")
-    
-    # Compact items description
-    items_description = ""
-    for name, supply, price in market_items:
-        formatted_supply = f"{supply:,}" if isinstance(supply, int) else str(supply)
-        formatted_price = f"{price:,}" if isinstance(price, (int, float)) else str(price)
-        items_description += f"**{name}**\n`{formatted_supply} t` @ `{formatted_price} cr`\n"
-    
-    embed = {
-        "title": "Fleet Carrier Market Update - WORK IN PROGRESS",
-        "description": "### **Currently Selling:**\n" + items_description,
-        "color": 0x00ff00,
-        "footer": {"text": "EDMC FCDN - Manual Sell Announcement"}
-    }
-    
-    # Add image only if URL is valid
-    if is_valid_url(image_url):
-        embed["image"] = {"url": image_url.strip()}
-        logger.debug(f"Posting sell action with image URL: {image_url}")
-    
-    try:
-        payload = {"embeds": [embed]}
-        response = requests.post(webhook_url, json=payload, timeout=10)
-        if response.status_code in [200, 204]:
-            logger.info(f"FCDN sell action posted successfully for {len(market_items)} items")
-        else:
-            logger.warning(f"FCDN sell action failed with status: {response.status_code}")
-            logger.debug(f"Response content: {response.text}")
-    except Exception as e:
-        logger.error(f"FCDN sell action error: {e}")
+    header = "Currently Selling" if is_selling else "Currently Buying"
+    color  = 0x00ff00 if is_selling else 0x3498db
 
-def fcdn_buy_action():
-    """
-    Post fleet carrier buy action to Discord webhook with formatted market data.
-    """
-    # example data - replace with actual market data retrieval
-    market_items = [
-        ("Aluminum", 1500, 750000),
-        ("Void Opals", 800, 950000),
-        ("Tritium", 50000, 50000),
-        ("Gold", 2500, 45000)
-    ]
-    
-    # Use saved config
+    # tolerate "95,000" / 95000 / "95000"
+    def _as_int(v):
+        s = str(v).replace(",", "").strip()
+        try:
+            return int(float(s))
+        except Exception:
+            return 0
+
+    market_items: list[tuple[str, int, int]] = []
+
+    for it in items:
+        name = it.get("Name_Localised") or it.get("Name") or "Unknown"
+
+        if is_selling:
+            # carrier selling to player, player buying from carrier
+            producer   = bool(it.get("Producer"))
+            quantity   = _as_int(it.get("Stock", 0))
+            unit_price = _as_int(it.get("BuyPrice", 0))
+            if producer or (quantity > 0 and unit_price > 0):
+                market_items.append((name, quantity, unit_price))
+        else:
+            # carrier buying from player, player buying from carrier
+            consumer   = bool(it.get("Consumer"))
+            quantity   = _as_int(it.get("Demand", 0))
+            unit_price = _as_int(it.get("SellPrice", 0))
+            if consumer or (quantity > 0 and unit_price > 0):
+                market_items.append((name, quantity, unit_price))
+
+    # Sort by price desc, then name; cap to keep embed compact
+    market_items.sort(key=lambda r: (r[2], r[0]), reverse=True)
+    market_items = market_items[:25]
+
+    # build description
+    items_description = ""
+    for name, qty, price in market_items:
+        formatted_qty   = f"{qty:,}"
+        formatted_price = f"{price:,}"
+        items_description += f"**{name}**\n`{formatted_qty} t` @ `{formatted_price} cr`\n"
+
+    if not market_items:
+        items_description = "_No items available for this list._"
+
+    ts_line = f"\n\n_Last updated: {ts}_" if ts else ""
+
+    embed = {
+        "title": "Fleet Carrier Market Update",
+        "description": f"### **{header}:**\n" + items_description + ts_line,
+        "color": color,
+        "footer": {"text": f"EDMC FCDN - Manual {'Sell' if is_selling else 'Buy'} Announcement"},
+    }
     webhook_url = config.get_str(CONFIG_WEBHOOK) or ""
-    image_url = config.get_str(CONFIG_IMAGE_URL) or ""
+    image_url   = config.get_str(CONFIG_IMAGE_URL) or ""
     
-    if not webhook_url.startswith(
-        ("https://discord.com/api/webhooks/", "https://discordapp.com/api/webhooks/")
-    ):
+    if not webhook_url.startswith(("https://discord.com/api/webhooks/", "https://discordapp.com/api/webhooks/")):
         logger.warning("Invalid webhook URL format")
         return
-    
-    # Validate image URL
     if image_url and not is_valid_url(image_url):
         logger.warning(f"Image URL should start with http:// or https://: {image_url}")
-    
-    # Compact items description
-    items_description = ""
-    for name, demand, price in market_items:
-        formatted_demand = f"{demand:,}" if isinstance(demand, int) else str(demand)
-        formatted_price = f"{price:,}" if isinstance(price, (int, float)) else str(price)
-        items_description += f"**{name}**\n`{formatted_demand} t` @ `{formatted_price} cr`\n"
-    
-    embed = {
-        "title": "Fleet Carrier Market Update - WORK IN PROGRESS",
-        "description": "### **Currently Buying:**\n" + items_description,
-        "color": 0x00ff00,
-        "footer": {"text": "EDMC FCDN - Manual Buy Announcement"}
-    }
-    
-    # Add image only if URL is valid
+
     if is_valid_url(image_url):
         embed["image"] = {"url": image_url.strip()}
         logger.debug(f"Posting buy action with image URL: {image_url}")
     
+    return embed, len(market_items)
+
+def fcdn_sell_action() -> None:
+    """
+    Post fleet carrier sell action to Discord webhook with formatted market data.
+    """
+    # build embed via helper
+    embed, count = build_market_embed(is_selling=True)
+
+    webhook_url = config.get_str(CONFIG_WEBHOOK) or ""
+
     try:
-        payload = {"embeds": [embed]}
-        response = requests.post(webhook_url, json=payload, timeout=10)
-        if response.status_code in [200, 204]:
-            logger.info(f"FCDN buy action posted successfully for {len(market_items)} items")
+        r = requests.post(webhook_url, json={"embeds": [embed]}, timeout=10)
+        if r.status_code in (200, 204):
+            logger.info(f"FCDN sell action posted successfully for {count} items")
         else:
-            logger.warning(f"FCDN buy action failed with status: {response.status_code}")
-            logger.debug(f"Response content: {response.text}")
+            logger.warning(f"FCDN sell action failed with status: {r.status_code}")
+            logger.debug(f"Response content: {r.text}")
+    except Exception as e:
+        logger.error(f"FCDN sell action error: {e}")
+
+def fcdn_buy_action() -> None:
+    """
+    Post fleet carrier buy action to Discord webhook with formatted market data.
+    """
+    # build embed via helper
+    embed, count = build_market_embed(is_selling=False)
+
+    webhook_url = config.get_str(CONFIG_WEBHOOK) or ""
+
+
+    try:
+        r = requests.post(webhook_url, json={"embeds": [embed]}, timeout=10)
+        if r.status_code in (200, 204):
+            logger.info(f"FCDN buy action posted successfully for {count} items")
+        else:
+            logger.warning(f"FCDN buy action failed with status: {r.status_code}")
+            logger.debug(f"Response content: {r.text}")
     except Exception as e:
         logger.error(f"FCDN buy action error: {e}")
+
 
 def test_webhook() -> None:
     """
@@ -701,11 +763,16 @@ def test_webhook() -> None:
     except Exception as e:
         logger.error(f"Test webhook error: {e}")
 
-
 def journal_entry(cmdr: str, is_beta: bool, system: str, station: str,
                   entry: Dict[str, Any], state: Dict[str, Any]) -> Optional[str]:
     
     event_type = entry.get("event")
+    
+    if event_type in ("Market", "CommodityPrices"):
+        update_market_state(entry)
+        logger.debug("Market Updated!")
+        return None
+    
     #integration is for EDSM configs
     integration_enabled = bool(config.get_bool(CONFIG_FUEL_MODE))          
     show_trit_on_cancel = bool(config.get_bool(CONFIG_SHOW_TRITIUM_CANCEL))
@@ -718,7 +785,11 @@ def journal_entry(cmdr: str, is_beta: bool, system: str, station: str,
 
     fuel_level, used_space, carrier_id = get_carrier_state()
 
-    # logger.debug(f"Detected carrier callsign: {carrier_id}")
+    on_own_carrier = is_player_on_their_carrier(state, carrier_id)
+    logger.info(f"Processing {event_type} - Player on their carrier: {on_own_carrier}")
+        
+
+
 
     if event_type not in ["CarrierJumpRequest", "CarrierJumpCancelled"] or is_beta:
         return None
@@ -735,8 +806,7 @@ def journal_entry(cmdr: str, is_beta: bool, system: str, station: str,
         return "FCDN: Configure Fleet Name in settings."
     
     # CRITICAL: Check if player is on their own carrier before processing
-    on_own_carrier = is_player_on_their_carrier(state, carrier_id)
-    logger.info(f"Processing {event_type} - Player on their carrier: {on_own_carrier}")
+
     
     image_url = config.get_str(CONFIG_IMAGE_URL) or ""
     

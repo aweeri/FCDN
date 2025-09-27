@@ -25,6 +25,8 @@ Fill out the required information and test your webhook. If that works - you're 
 <img width="553" height="561" alt="image" src="https://github.com/user-attachments/assets/df8181bb-7717-44d9-98c0-0857dd050bf5" />
 
 ### Contributors
-- [aweeri](https://github.com/aweeri) – Original creator
-- [TotallyAm](https://github.com/TotallyAm) – Fuel cost & distance calculation feature
+- [aweeri](https://github.com/aweeri) – Original creator, GUI
+- [TotallyAm](https://github.com/TotallyAm) – Fuel and distance, commodity market update
 - [SweetJonnySauce](https://github.com/SweetJonnySauce) – Ubuntu compatibility fix
+- [MrTagnan](https://github.com/MrTagnan) – "pls add me" + contributed imagery and minimal design adjustments
+
