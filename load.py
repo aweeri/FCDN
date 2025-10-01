@@ -66,7 +66,7 @@ _carrier_state = {
 class PluginConfig:
     def __init__(self):
         self.plugin_name = "Fleet Carrier Discord Notifier"
-        self.version = "1.1.3"
+        self.version = "1.1.3 WIP"
         self.webhook_entry = None
         self.id_entry = None
         self.name_entry = None
