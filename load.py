@@ -4,6 +4,7 @@ Posts fleet carrier jump events to Discord via webhook.
 """
 
 import tkinter as tk
+from tkinter import ttk
 from pathlib import Path
 from typing import Optional, Dict, Any
 from datetime import datetime, timedelta
@@ -145,6 +146,8 @@ def plugin_prefs(parent: nb.Notebook, cmdr: str, is_beta: bool) -> Optional[tk.F
     logger.debug("Loading plugin preferences UI")
     frame = nb.Frame(parent)
     frame.columnconfigure(1, weight=1)
+
+    entry_widget = getattr(nb, "Entry", ttk.Entry)
     
     current_row = 0
     
@@ -166,7 +169,7 @@ def plugin_prefs(parent: nb.Notebook, cmdr: str, is_beta: bool) -> Optional[tk.F
     for label, attr in settings:
         current_row += 1
         nb.Label(frame, text=label).grid(row=current_row, column=0, padx=10, pady=5, sticky=tk.W)
-        entry = nb.Entry(frame, width=60)
+        entry = entry_widget(frame, width=60)
         entry.grid(row=current_row, column=1, padx=10, pady=5, sticky=tk.EW)
         setattr(config_state, attr, entry)
     
