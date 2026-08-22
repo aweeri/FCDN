@@ -336,6 +336,7 @@ def edsm_coords(system_name: str):
         r = requests.get(
             "https://www.edsm.net/api-v1/system",
             params={"systemName": system_name, "showCoordinates": 1},
+            headers={"User-Agent": "FCDN/1.0"},
             timeout=10,
         )
         js = r.json()
